@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Users, Palette, UtensilsCrossed, Music, Film, Globe, Moon, Sun, Heart, Smile, Frown, Download, Upload } from 'lucide-react'
+import { X, Users, Palette, UtensilsCrossed, Music, Film, Globe, Sun, Heart, Smile, Frown, Download, Upload, Cloud, CloudOff, Copy } from 'lucide-react'
 import { storage } from '../utils/storage'
+import { initializeSync, getCoupleId, isSyncEnabled } from '../utils/storageSync'
+import { firebaseConfig } from '../firebase/config'
 
 const SettingsModal = ({ settings, onClose, onSave }) => {
   const [formData, setFormData] = useState({
@@ -165,6 +167,13 @@ const SettingsModal = ({ settings, onClose, onSave }) => {
 
             <div className="border-t border-romantic-200 dark:border-gray-700 pt-6 mt-6">
               <h3 className="text-lg font-bold text-romantic-700 dark:text-romantic-300 mb-4">
+                Synchronisation en temps réel 🔄
+              </h3>
+              <FirebaseSyncSection />
+            </div>
+
+            <div className="border-t border-romantic-200 dark:border-gray-700 pt-6 mt-6">
+              <h3 className="text-lg font-bold text-romantic-700 dark:text-romantic-300 mb-4">
                 Partage des données 💕
               </h3>
               <p className="text-sm text-romantic-600 dark:text-romantic-400 mb-4">
@@ -182,7 +191,6 @@ const SettingsModal = ({ settings, onClose, onSave }) => {
               <PersonalInfoForm
                 person={personalInfo.person1 || {}}
                 updatePerson={(field, value) => updatePersonalInfo('person1', field, value)}
-                personName={settings.names?.person1 || 'Lui'}
                 isPerson1={true}
               />
             )}
@@ -191,7 +199,6 @@ const SettingsModal = ({ settings, onClose, onSave }) => {
               <PersonalInfoForm
                 person={personalInfo.person2 || {}}
                 updatePerson={(field, value) => updatePersonalInfo('person2', field, value)}
-                personName={settings.names?.person2 || 'Elle'}
                 isPerson1={false}
               />
             )}
@@ -215,7 +222,7 @@ const SettingsModal = ({ settings, onClose, onSave }) => {
   )
 }
 
-const PersonalInfoForm = ({ person, updatePerson, personName, isPerson1 }) => {
+const PersonalInfoForm = ({ person, updatePerson, isPerson1 }) => {
   // Déterminer le genre selon si c'est person1 (Lui = masculin) ou person2 (Elle = féminin)
   const isMasculin = isPerson1
   
@@ -308,7 +315,7 @@ const PersonalInfoForm = ({ person, updatePerson, personName, isPerson1 }) => {
       <div>
         <label className="block text-romantic-700 dark:text-romantic-300 font-semibold mb-2 flex items-center gap-2">
           <Frown className="w-4 h-4" />
-          Ce qui l'énerve
+          Ce qui l&apos;énerve
         </label>
         <textarea
           value={person.whatAnnoys || ''}
@@ -336,19 +343,160 @@ const PersonalInfoForm = ({ person, updatePerson, personName, isPerson1 }) => {
   )
 }
 
+const FirebaseSyncSection = () => {
+  const [isEnabled, setIsEnabled] = useState(false)
+  const [coupleId, setCoupleId] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    setIsEnabled(isSyncEnabled())
+    setCoupleId(getCoupleId())
+  }, [])
+
+  const handleEnableSync = async () => {
+    setLoading(true)
+    setMessage('')
+
+    // Vérifier si Firebase est configuré
+    if (!firebaseConfig.apiKey || firebaseConfig.apiKey === 'VOTRE_API_KEY') {
+      setMessage('⚠️ Veuillez d\'abord configurer Firebase dans src/firebase/config.js (voir FIREBASE_SETUP.md)')
+      setLoading(false)
+      return
+    }
+
+    try {
+      const result = await initializeSync(firebaseConfig)
+      if (result.success) {
+        setIsEnabled(true)
+        setCoupleId(result.coupleId || getCoupleId())
+        setMessage('✅ Synchronisation activée ! Partagez l\'ID du couple avec votre partenaire.')
+        // Recharger la page pour appliquer les changements
+        setTimeout(() => window.location.reload(), 2000)
+      } else {
+        setMessage(`❌ Erreur : ${result.message}`)
+      }
+    } catch (error) {
+      setMessage(`❌ Erreur : ${error.message}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const copyCoupleId = () => {
+    navigator.clipboard.writeText(coupleId)
+    setMessage('✅ ID copié ! Partagez-le avec votre partenaire.')
+    setTimeout(() => setMessage(''), 3000)
+  }
+
+  if (isEnabled) {
+    return (
+      <div className="space-y-4">
+        <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+          <div className="flex items-center gap-2 text-green-700 dark:text-green-400 mb-2">
+            <Cloud className="w-5 h-5" />
+            <span className="font-semibold">Synchronisation active ✅</span>
+          </div>
+          <p className="text-sm text-green-600 dark:text-green-300 mb-3">
+            Vos données se synchronisent en temps réel avec votre partenaire !
+          </p>
+          <div className="space-y-2">
+            <label className="block text-sm font-semibold text-green-700 dark:text-green-400">
+              ID du couple (à partager) :
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={coupleId}
+                readOnly
+                className="flex-1 px-3 py-2 bg-white dark:bg-gray-800 border border-green-300 dark:border-green-700 rounded text-sm font-mono"
+              />
+              <button
+                type="button"
+                onClick={copyCoupleId}
+                className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded transition-colors flex items-center gap-2"
+              >
+                <Copy className="w-4 h-4" />
+                Copier
+              </button>
+            </div>
+          </div>
+        </div>
+        {message && (
+          <p className={`text-sm ${message.includes('✅') ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+            {message}
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+        <div className="flex items-center gap-2 text-blue-700 dark:text-blue-400 mb-2">
+          <CloudOff className="w-5 h-5" />
+          <span className="font-semibold">Synchronisation désactivée</span>
+        </div>
+        <p className="text-sm text-blue-600 dark:text-blue-300 mb-4">
+          Activez la synchronisation en temps réel pour voir les modifications de votre partenaire instantanément avec des notifications ! 🔔
+        </p>
+        <button
+          type="button"
+          onClick={handleEnableSync}
+          disabled={loading}
+          className="w-full px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white rounded-lg transition-colors flex items-center justify-center gap-2"
+        >
+          {loading ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              Activation...
+            </>
+          ) : (
+            <>
+              <Cloud className="w-4 h-4" />
+              Activer la synchronisation
+            </>
+          )}
+        </button>
+      </div>
+      {message && (
+        <p className={`text-sm ${message.includes('✅') ? 'text-green-600 dark:text-green-400' : message.includes('⚠️') ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400'}`}>
+          {message}
+        </p>
+      )}
+      <p className="text-xs text-romantic-500 dark:text-romantic-400">
+        📖 Consultez FIREBASE_SETUP.md pour les instructions de configuration
+      </p>
+    </div>
+  )
+}
+
 const ExportDataButton = () => {
   const handleExport = () => {
     const data = storage.exportAllData()
     const dataStr = JSON.stringify(data, null, 2)
     const dataBlob = new Blob([dataStr], { type: 'application/json' })
     const url = URL.createObjectURL(dataBlob)
+        
+    // Créer un nom de fichier avec date lisible
+    const date = new Date()
+    const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    const fileName = `notre-histoire-${dateStr}.json`
+    
     const link = document.createElement('a')
     link.href = url
-    link.download = `love-story-backup-${new Date().toISOString().split('T')[0]}.json`
+    link.download = fileName
+    link.setAttribute('download', fileName) // Force le nom du fichier
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
     URL.revokeObjectURL(url)
+    
+    // Afficher un message de confirmation
+    setTimeout(() => {
+      alert(`Fichier exporté : ${fileName}\n\nVous pouvez maintenant le partager avec votre partenaire ! 💕`)
+    }, 100)
   }
 
   return (
